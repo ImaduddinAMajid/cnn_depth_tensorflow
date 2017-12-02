@@ -1,5 +1,8 @@
 #encoding: utf-8
 
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
 from datetime import datetime
 from tensorflow.python.platform import gfile
 import numpy as np
@@ -8,6 +11,7 @@ from dataset import DataSet
 from dataset import output_predict
 import model
 import train_operation as op
+import time
 
 MAX_STEPS = 10000000
 LOG_DEVICE_PLACEMENT = False
