@@ -15,21 +15,29 @@ import time
 
 MAX_STEPS = 10000000
 LOG_DEVICE_PLACEMENT = False
-BATCH_SIZE = 8
-TRAIN_FILE = "train.csv"
-COARSE_DIR = "coarse"
-REFINE_DIR = "refine"
+BATCH_SIZE = 1
+TRAIN_FILE = "train_small.csv"
+VALIDATION_FILE = "validate_small.csv"
+COARSE_DIR = "coarse_small"
+REFINE_DIR = "refine_small"
+PREDICT_REFINE_DIR = "data/predict_refine_small"
+PREDICT_DIR = "data/predict_small"
+VALIDATION_DIR = "data/validation_small"
 
-REFINE_TRAIN = True
+REFINE_TRAIN = False
 FINE_TUNE = True
 
 def train():
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
         dataset = DataSet(BATCH_SIZE)
+        val_dataset = DataSet(BATCH_SIZE)
         images, depths, invalid_depths = dataset.csv_inputs(TRAIN_FILE)
+        val_images, val_depths, val_invalid_depths = val_dataset.csv_inputs(VALIDATION_FILE)
         keep_conv = tf.placeholder(tf.float32)
         keep_hidden = tf.placeholder(tf.float32)
+        val_keep_conv = tf.placeholder(tf.float32)
+        val_keep_hidden = tf.placeholder(tf.float32)
         if REFINE_TRAIN:
             print("refine train.")
             coarse = model.inference(images, keep_conv, trainable=False)
@@ -37,8 +45,11 @@ def train():
         else:
             print("coarse train.")
             logits = model.inference(images, keep_conv, keep_hidden)
+            val_logits = model.inference(val_images, reuse=True, trainable=False)
         loss = model.loss(logits, depths, invalid_depths)
+        val_loss = model.loss(val_logits, val_depths, val_invalid_depths)
         train_op = op.train(loss, global_step, BATCH_SIZE)
+        val_op = op.train(val_loss, global_step, BATCH_SIZE)
         init_op = tf.initialize_all_variables()
 
         # Session
@@ -99,14 +110,17 @@ def train():
             index = 0
             for i in range(1000):
                 _, loss_value, logits_val, images_val = sess.run([train_op, loss, logits, images], feed_dict={keep_conv: 0.8, keep_hidden: 0.5})
+                _, val_loss_value, val_logits_val, val_images_val = sess.run([val_op, val_loss, val_logits, val_images])
                 if index % 10 == 0:
-                    print("%s: %d[epoch]: %d[iteration]: train loss %f" % (datetime.now(), step, index, loss_value))
+                    # print("%s: %d[epoch]: %d[iteration]: train loss %f" % (datetime.now(), step, index, loss_value))
+                    print("%s: %d[epoch]: %d[iteration]: train loss %f validation loss %f" % (datetime.now(), step, index, loss_value, val_loss_value))
                     assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
                 if index % 500 == 0:
                     if REFINE_TRAIN:
-                        output_predict(logits_val, images_val, "data/predict_refine_%05d_%05d" % (step, i))
+                        output_predict(logits_val, images_val, "%s_%05d_%05d" % (PREDICT_REFINE_DIR, step, i))
                     else:
-                        output_predict(logits_val, images_val, "data/predict_%05d_%05d" % (step, i))
+                        output_predict(logits_val, images_val, "%s_%05d_%05d" % (PREDICT_DIR, step, i))
+                    output_predict(val_logits_val, val_images_val, "%s_%05d_%05d" % (VALIDATION_DIR, step, i))    
                 index += 1
 
             if step % 5 == 0 or (step * 1) == MAX_STEPS:
